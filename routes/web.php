@@ -31,13 +31,13 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-Livewire::setUpdateRoute(function ($handle) {
-    return Route::post('/councils/public/livewire/update', $handle);
-});
+//Livewire::setUpdateRoute(function ($handle) {
+//    return Route::post('/councils/public/livewire/update', $handle);
+//});
 
 // Start faculty sessions routes
-Route::post('/admin/faculty-sessions/{record}/start', [FacultySessionUserController::class, 'submitForm'])->name('attendance.submit');
-Route::get('/admin/faculty-sessions/{record}/get-users-attendance', [FacultySessionUserController::class, 'getusersattandence'])->name('attendance.get-users-attendance');
+Route::post('/admin/faculty-sessions/{record}/start', [FacultySessionUserController::class, 'submitForm'])->name('attendance.submit.faculty');
+Route::get('/admin/faculty-sessions/{record}/get-users-attendance', [FacultySessionUserController::class, 'getusersattandence'])->name('attendance.get-users-attendance.faculty');
 Route::post('/save-faculty-session-time', [FacultySessionUserController::class, 'saveTime'])->name('saveFacultySessionTime');
 Route::post('/saveFacultyAttendance', [FacultySessionUserController::class, 'saveAttendance'])->name('saveFacultyAttendance');
 Route::get('/get-users-attendance/{recordId}', [FacultySessionUserController::class, 'getUsersAttendance'])->name('get.users.attendance');
@@ -45,7 +45,7 @@ Route::get('/fetch-faculty-attendance/{session_id}/{locale?}', [FacultySessionUs
 Route::get('/fetch-faculty-voiting/{session_id}/{locale?}', [FacultySessionUserController::class, 'fetchVoiting'])->name('fetchFacultyVoiting');
 Route::get('/fetch-faculty-voiting-single/{session_id}/{locale?}', [FacultySessionUserController::class, 'fetchVoitingSingle'])->name('fetchFacultyVoitingSingle');
 Route::post('/saveFacultyVoiting', [FacultySessionUserController::class, 'saveVoiting'])->name('saveFacultyVoiting');
-Route::post('/saveFacultyVoitingSingle', [FacultySessionUserController::class, 'saveVoitingSingle'])->name('saveVoitingSingle');
+Route::post('/saveFacultyVoitingSingle', [FacultySessionUserController::class, 'saveVoitingSingle'])->name('saveVoitingSingle.faculty');
 Route::post('/save-time', [FacultySessionUserController::class, 'saveTime']);
 Route::get('/GetFacultyFormForSession', [FacultySessionUserController::class, 'GetFormForSession'])->name('GetFacultyFormForSession');
 Route::get('/load-faculty-form-content/{locale?}', [FacultySessionUserController::class, 'loadFormContent'])->name('loadFacultyFormContent');
