@@ -1,6 +1,7 @@
 <?php
 namespace App\Http\Controllers;
 
+use App\Models\AcadimicRank;
 use App\Models\LDAP;
 use App\Models\Role;
 use App\Models\User;
@@ -75,11 +76,11 @@ class LDAPController extends Controller
                 'hosts' => explode(',', $request->ldapSettings['hosts']),
                 'port' => $request->ldapSettings['port'],
                 'base_dn' => $request->ldapSettings['base_dn'],
-                'username' =>$firstDcValue . '\\' . $request->ldapSettings['username'],
+                'username' => $firstDcValue . '\\' . $request->ldapSettings['username'],
                 'password' => Crypt::decrypt($request->ldapSettings['password']),
                 // Optional Configuration Options
-                'use_ssl' => ($request->ldapSettings['ssl'] == 1)  ? true : false,
-                'use_tls' => ($request->ldapSettings['tls'] == 1)  ? true : false,
+                'use_ssl' => ($request->ldapSettings['ssl'] == 1) ? true : false,
+                'use_tls' => ($request->ldapSettings['tls'] == 1) ? true : false,
                 'follow_referrals' => ($request->follow == 1) ? true : false,
                 'version' => (int) $request->ldapSettings['version'],
                 'timeout' => (int) $request->ldapSettings['timeout'],
@@ -130,12 +131,11 @@ class LDAPController extends Controller
             'base_dn' => $ldapSettings->base_dn,
             'username' => $firstDcValue . '\\' . $ldapSettings->username,
             'password' => Crypt::decrypt($ldapSettings->password),
-            // Optional Configuration Options
-            'use_ssl' => ($ldapSettings->ssl == '1') ? true : false,
-            'use_tls' => ($ldapSettings->tls == '1') ? true : false,
+            'use_ssl' => ($ldapSettings->ssl == '1'),
+            'use_tls' => ($ldapSettings->tls == '1'),
             'version' => (int) $ldapSettings->version,
             'timeout' => (int) $ldapSettings->timeout,
-            'follow_referrals' => ($ldapSettings->follow == '1') ? true : false,
+            'follow_referrals' => ($ldapSettings->follow == '1'),
         ]);
 
         try {
@@ -143,14 +143,21 @@ class LDAPController extends Controller
             $container = Container::addConnection($connection);
             $this->connection = $connection;
             $this->container = $container;
+
+            // Return success response
+            return [
+                'status' => true,
+                'message' => 'LDAP connection successful',
+            ];
         } catch (BindException $e) {
-
             $error = $e->getDetailedError();
-            $error->getErrorCode();
-            $error->getErrorMessage();
-            $error->getDiagnosticMessage();
 
-            return $error;
+            return [
+                'status' => false,
+                'error_code' => $error->getErrorCode(),
+                'error_message' => $error->getErrorMessage(),
+                'diagnostic_message' => $error->getDiagnosticMessage(),
+            ];
         }
     }
 
@@ -164,13 +171,28 @@ class LDAPController extends Controller
             }
 
             $user = $this->connection->query()->where('samaccountname', '=', $username)->first();
-            dd($user);
+
+            $userAcademicRank = $user['title'][0] ?? null;
+
+            $rankId = null;
+
+            if ($userAcademicRank) {
+                $existAcademicRank = AcadimicRank::firstOrCreate(
+                    ['ar_name' => $userAcademicRank],
+                    ['name' => $userAcademicRank]
+                );
+
+                $rankId = $existAcademicRank->id;
+            }
+
             if ($user) {
                 return [
-                    'name' => $user['cn'][0] ?? '',
                     'username' => $username,
+                    'acadimic_rank_id' => $rankId,
+                    'name' => $user['givenname'][0] ?? '',
+                    'ar_name' => $user['cn'][0] ?? '',
+                    'en_name' => $user['displayname'][0] ?? '',
                     'email' => $user['mail'][0] ?? '',
-                    'phone' => $user['telephonenumber'][0] ?? '',
                 ];
             }
 
@@ -195,10 +217,12 @@ class LDAPController extends Controller
 
             foreach ($users as $user) {
                 $fillable[] = [
-                    'name' => $user['cn'][0] ?? '',
                     'username' => $user['samaccountname'][0] ?? '',
+                    'acadimic_rank' => $user['title'][0] ?? '',
+                    'name' => $user['givenname'][0] ?? '',
+                    'ar_name' => $user['cn'][0] ?? '',
+                    'en_name' => $user['displayname'][0] ?? '',
                     'email' => $user['mail'][0] ?? '',
-                    'phone' => $user['telephonenumber'][0] ?? '',
                 ];
             }
 
@@ -252,16 +276,31 @@ class LDAPController extends Controller
                         continue;
                     }
 
+                    $userAcademicRank = $userData['acadimic_rank'] ?? null;
+
+                    $rankId = null;
+
+                    if ($userAcademicRank) {
+                        $existAcademicRank = AcadimicRank::firstOrCreate(
+                            ['ar_name' => $userAcademicRank],
+                            ['name' => $userAcademicRank]
+                        );
+
+                        $rankId = $existAcademicRank->id;
+                    }
+
                     // Add to the batch for insertion
                     $usersToInsert[] = [
                         'username' => $userData['username'],
                         'name' => $userData['name'],
+                        'ar_name' => $userData['ar_name'],
+                        'en_name' => $userData['en_name'],
                         'email' => $userData['email'],
-                        'phone' => $userData['phone'] ?? null,
                         'password' => '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
                         'type' => 'ldap',
                         'is_active' => 1, // Activate the user by default
                         'position_id' => 1, // Default position being acacemic staff
+                        'acadimic_rank_id' => $rankId,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ];
@@ -301,7 +340,7 @@ class LDAPController extends Controller
             // Return a response with the results
             return response()->json([
                 'success' => true,
-                'message' =>  __("users were successfully imported") . " {$totalImported}.",
+                'message' => __("users were successfully imported") . " {$totalImported}.",
                 'total_imported' => $totalImported,
                 'failed_imports' => $failedImports,
             ]);
