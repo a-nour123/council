@@ -23,7 +23,7 @@ class LDAPController extends Controller
     {
         // Validate the incoming request
         $request->validate([
-            'id' => 'nullable|exists:ldap_settings,id', // Check if ID exists in the DB
+            'id' => 'nullable|exists:ldap_settings,id',
             'hosts' => 'required|string',
             'port' => 'required|integer',
             'base_dn' => 'required|string',
@@ -39,7 +39,7 @@ class LDAPController extends Controller
 
         // Use the LDAP model to update or create the record
         LDAP::updateOrCreate(
-            ['id' => $request->id], // If ID exists, update; if not, create a new record
+            ['id' => $request->id],
             [
                 'hosts' => $request->hosts,
                 'port' => $request->port,
@@ -64,12 +64,12 @@ class LDAPController extends Controller
         $draw = (int) $request->input('draw', 1);
         $start = (int) $request->input('start', 0);
         $length = (int) $request->input('length', 10);
-        $searchValue = trim(data_get($request->input('search'), 'value', ''));
+        $searchValue = trim($request->input('search.value', ''));
 
-        // Get all LDAP users via existing logic (do not change original method)
+        // Get all LDAP users
         $allUsers = $this->getLdapUsers();
 
-        // Build existing LDAP users lookup from DB to mark existence
+        // Build existing LDAP users lookup from DB
         $currentLDAPUsers = User::where('type', 'ldap')
             ->select('email', 'username')
             ->get()
@@ -82,12 +82,12 @@ class LDAPController extends Controller
         if ($searchValue !== '') {
             $allUsers = array_values(array_filter($allUsers, function ($user) use ($searchValue) {
                 $haystack = implode(' ', [
-                    data_get($user, 'username', ''),
-                    data_get($user, 'name', ''),
-                    data_get($user, 'ar_name', ''),
-                    data_get($user, 'en_name', ''),
-                    data_get($user, 'email', ''),
-                    data_get($user, 'acadimic_rank', ''),
+                    $user['username'] ?? '',
+                    $user['name'] ?? '',
+                    $user['ar_name'] ?? '',
+                    $user['en_name'] ?? '',
+                    $user['email'] ?? '',
+                    $user['acadimic_rank'] ?? '',
                 ]);
                 return stripos($haystack, $searchValue) !== false;
             }));
@@ -98,15 +98,15 @@ class LDAPController extends Controller
         // Pagination slice
         $pageData = array_slice($allUsers, $start, $length);
 
-        // Append existence flag and sanitize UTF-8 strings
+        // Append existence flag
         $data = array_map(function ($user) use ($currentLDAPLookup) {
             $user['exist'] = isset($currentLDAPLookup[$user['username']]) || in_array($user['email'], $currentLDAPLookup);
-            $user['username'] = $this->normalizeLdapString(data_get($user, 'username', ''));
-            $user['name'] = $this->normalizeLdapString(data_get($user, 'name', ''));
-            $user['ar_name'] = $this->normalizeLdapString(data_get($user, 'ar_name', ''));
-            $user['en_name'] = $this->normalizeLdapString(data_get($user, 'en_name', ''));
-            $user['email'] = $this->normalizeLdapString(data_get($user, 'email', ''));
-            $user['acadimic_rank'] = $this->normalizeLdapString(data_get($user, 'acadimic_rank', ''));
+            $user['username'] = isset($user['username']) ? (string) $user['username'] : '';
+            $user['name'] = isset($user['name']) ? (string) $user['name'] : '';
+            $user['ar_name'] = isset($user['ar_name']) ? (string) $user['ar_name'] : '';
+            $user['en_name'] = isset($user['en_name']) ? (string) $user['en_name'] : '';
+            $user['email'] = isset($user['email']) ? (string) $user['email'] : '';
+            $user['acadimic_rank'] = isset($user['acadimic_rank']) ? (string) $user['acadimic_rank'] : '';
             return $user;
         }, $pageData);
 
@@ -120,14 +120,11 @@ class LDAPController extends Controller
 
     public function testConnection(Request $request)
     {
-
         try {
-
             $base_dn = explode(",", $request->ldapSettings['base_dn']);
             $firstDcValue = null;
             foreach ($base_dn as $component) {
-                if (strpos($component, needle: "DC=") === 0) {
-                    // Extract the value of the first "DC" component
+                if (strpos($component, "DC=") === 0) {
                     $firstDcValue = substr($component, 3);
                     break;
                 }
@@ -138,7 +135,6 @@ class LDAPController extends Controller
                 'base_dn' => $request->ldapSettings['base_dn'],
                 'username' => $firstDcValue . '\\' . $request->ldapSettings['username'],
                 'password' => Crypt::decrypt($request->ldapSettings['password']),
-                // Optional Configuration Options
                 'use_ssl' => ($request->ldapSettings['ssl'] == 1) ? true : false,
                 'use_tls' => ($request->ldapSettings['tls'] == 1) ? true : false,
                 'follow_referrals' => ($request->follow == 1) ? true : false,
@@ -173,13 +169,10 @@ class LDAPController extends Controller
     {
         $ldapSettings = LDAP::first();
 
-
-        // Split the DN string by commas
         $base_dn = explode(",", $ldapSettings->base_dn);
         $firstDcValue = null;
         foreach ($base_dn as $component) {
             if (strpos($component, "DC=") === 0) {
-                // Extract the value of the first "DC" component
                 $firstDcValue = substr($component, 3);
                 break;
             }
@@ -204,7 +197,6 @@ class LDAPController extends Controller
             $this->connection = $connection;
             $this->container = $container;
 
-            // Return success response
             return [
                 'status' => true,
                 'message' => 'LDAP connection successful',
@@ -232,7 +224,7 @@ class LDAPController extends Controller
 
             $user = $this->connection->query()->where('samaccountname', '=', $username)->first();
 
-            $userAcademicRank = $user['title'][0] ?? null;
+            $userAcademicRank = isset($user['title'][0]) ? (string) $user['title'][0] : null;
 
             $rankId = null;
 
@@ -249,10 +241,10 @@ class LDAPController extends Controller
                 $userData = [
                     'username' => $username,
                     'acadimic_rank_id' => $rankId,
-                    'name' => $user['givenname'][0] ?? '',
-                    'ar_name' => $user['cn'][0] ?? '',
-                    'en_name' => $user['displayname'][0] ?? '',
-                    'email' => $user['mail'][0] ?? '',
+                    'name' => isset($user['givenname'][0]) ? (string) $user['givenname'][0] : '',
+                    'ar_name' => isset($user['cn'][0]) ? (string) $user['cn'][0] : '',
+                    'en_name' => isset($user['displayname'][0]) ? (string) $user['displayname'][0] : '',
+                    'email' => isset($user['mail'][0]) ? (string) $user['mail'][0] : '',
                 ];
 
                 return $userData;
@@ -279,12 +271,12 @@ class LDAPController extends Controller
 
             foreach ($users as $user) {
                 $fillable[] = [
-                    'username' => $this->normalizeLdapString(data_get($user, 'samaccountname')),
-                    'acadimic_rank' => $this->normalizeLdapString(data_get($user, 'title')),
-                    'name' => $this->normalizeLdapString(data_get($user, 'givenname')),
-                    'ar_name' => $this->normalizeLdapString(data_get($user, 'cn')),
-                    'en_name' => $this->normalizeLdapString(data_get($user, 'displayname')),
-                    'email' => $this->normalizeLdapString(data_get($user, 'mail')),
+                    'username' => isset($user['samaccountname'][0]) ? (string) $user['samaccountname'][0] : '',
+                    'acadimic_rank' => isset($user['title'][0]) ? (string) $user['title'][0] : '',
+                    'name' => isset($user['givenname'][0]) ? (string) $user['givenname'][0] : '',
+                    'ar_name' => isset($user['cn'][0]) ? (string) $user['cn'][0] : '',
+                    'en_name' => isset($user['displayname'][0]) ? (string) $user['displayname'][0] : '',
+                    'email' => isset($user['mail'][0]) ? (string) $user['mail'][0] : '',
                 ];
             }
 
@@ -294,35 +286,10 @@ class LDAPController extends Controller
         }
     }
 
-    private function normalizeLdapString($value): string
-    {
-        // Some LDAP libraries return arrays for multivalued attributes
-        if (is_array($value)) {
-            // Prefer first item
-            $value = reset($value);
-        }
-
-        if (!is_string($value)) {
-            $value = '';
-        }
-
-        // Ensure proper UTF-8; strip invalid bytes
-        if (!mb_check_encoding($value, 'UTF-8')) {
-            $converted = @iconv('UTF-8', 'UTF-8//IGNORE', $value);
-            if ($converted !== false) {
-                $value = $converted;
-            } else {
-                $value = utf8_encode($value);
-            }
-        }
-
-        return $value;
-    }
-
     public function importUsers(Request $request)
     {
         $users = $request->input('users');
-        $batchSize = 100; // Adjust based on your server's capabilities
+        $batchSize = 100;
         $totalImported = 0;
         $failedImports = [];
         $userRole = Role::where('name', 'Member')->first();
@@ -330,28 +297,22 @@ class LDAPController extends Controller
         try {
             DB::beginTransaction();
 
-            // Process users in batches
             foreach (array_chunk($users, $batchSize) as $usersBatch) {
                 $usersToInsert = [];
-                $userCredentials = []; // Store user credentials for role assignment
+                $userCredentials = [];
                 $existingUsernames = [];
 
-                // Extract usernames to check for existing users
                 $usernames = collect($usersBatch)->pluck('username')->toArray();
 
-                // Check existing users in a single query
                 $existingUsers = User::whereIn('username', $usernames)
                     ->orWhereIn('email', collect($usersBatch)->pluck('email')->toArray())
                     ->select('username', 'email')
                     ->get();
 
-                // Create an index of existing usernames and emails for fast lookups
                 $existingUsernamesIndex = $existingUsers->pluck('username')->flip()->toArray();
                 $existingEmailsIndex = $existingUsers->pluck('email')->flip()->toArray();
 
-                // Process each user in the batch
                 foreach ($usersBatch as $userData) {
-                    // Skip users that already exist
                     if (
                         isset($existingUsernamesIndex[$userData['username']]) ||
                         isset($existingEmailsIndex[$userData['email']])
@@ -363,7 +324,7 @@ class LDAPController extends Controller
                         continue;
                     }
 
-                    $userAcademicRank = $userData['acadimic_rank'] ?? null;
+                    $userAcademicRank = isset($userData['acadimic_rank']) ? (string) $userData['acadimic_rank'] : null;
 
                     $rankId = null;
 
@@ -376,40 +337,34 @@ class LDAPController extends Controller
                         $rankId = $existAcademicRank->id;
                     }
 
-                    // Add to the batch for insertion
                     $usersToInsert[] = [
-                        'username' => $userData['username'],
-                        'name' => $userData['name'],
-                        'ar_name' => $userData['ar_name'],
-                        'en_name' => $userData['en_name'],
-                        'email' => $userData['email'],
-                        'password' => '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
+                        'username' => isset($userData['username']) ? (string) $userData['username'] : '',
+                        'name' => isset($userData['name']) ? (string) $userData['name'] : '',
+                        'ar_name' => isset($userData['ar_name']) ? (string) $userData['ar_name'] : '',
+                        'en_name' => isset($userData['en_name']) ? (string) $userData['en_name'] : '',
+                        'email' => isset($userData['email']) ? (string) $userData['email'] : '',
+                        'password' => '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
                         'type' => 'ldap',
-                        'is_active' => 1, // Activate the user by default
-                        'position_id' => 1, // Default position being acacemic staff
+                        'is_active' => 1,
+                        'position_id' => 1,
                         'acadimic_rank_id' => $rankId,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ];
 
-                    // Store usernames to later assign roles
                     $userCredentials[] = [
                         'username' => $userData['username'],
                         'email' => $userData['email']
                     ];
 
-                    // Add to our local tracking to prevent duplicates within the same request
                     $existingUsernamesIndex[$userData['username']] = true;
                     $existingEmailsIndex[$userData['email']] = true;
                 }
 
-                // Insert the batch if we have users to insert
                 if (!empty($usersToInsert)) {
                     User::insert($usersToInsert);
 
-                    // Now assign roles to the newly created users
                     foreach ($userCredentials as $credentials) {
-                        // Find the user by username and assign the role
                         $user = User::where('username', $credentials['username'])
                             ->orWhere('email', $credentials['email'])
                             ->first();
@@ -424,7 +379,6 @@ class LDAPController extends Controller
 
             DB::commit();
 
-            // Return a response with the results
             return response()->json([
                 'success' => true,
                 'message' => __("users were successfully imported") . " {$totalImported}.",
@@ -434,7 +388,7 @@ class LDAPController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
-            report($e); // Log the exception
+            report($e);
 
             return response()->json([
                 'success' => false,
@@ -442,5 +396,4 @@ class LDAPController extends Controller
             ], 500);
         }
     }
-
 }
