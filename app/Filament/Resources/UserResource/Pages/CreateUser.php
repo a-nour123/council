@@ -50,10 +50,14 @@ class CreateUser extends CreateRecord
         return __('User Created Successfully');
     }
 
-    // protected function mutateFormDataBeforeCreate(array $data): array
-    // {
-    //     dd($data);
-    // }
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        if($data['type'] == 'ldap'){
+            $data['password'] = Hash::make('password');
+        }
+        // dd($data);
+        return $data;
+    }
 
     /*
     This function ensures that when a new user is created, it is automatically assigned a role based on the role ID provided in the form data.
