@@ -58,6 +58,66 @@ class LDAPController extends Controller
         return response()->json(['message' => 'تم حفظ الإعدادات بنجاح']);
     }
 
+    public function ldapUsersData(Request $request)
+    {
+        // DataTables server-side parameters
+        $draw = (int) $request->input('draw', 1);
+        $start = (int) $request->input('start', 0);
+        $length = (int) $request->input('length', 10);
+        $searchValue = trim(data_get($request->input('search'), 'value', ''));
+
+        // Get all LDAP users via existing logic (do not change original method)
+        $allUsers = $this->getLdapUsers();
+
+        // Build existing LDAP users lookup from DB to mark existence
+        $currentLDAPUsers = User::where('type', 'ldap')
+            ->select('email', 'username')
+            ->get()
+            ->toArray();
+        $currentLDAPLookup = collect($currentLDAPUsers)->pluck('email', 'username')->toArray();
+
+        $recordsTotal = count($allUsers);
+
+        // Filter
+        if ($searchValue !== '') {
+            $allUsers = array_values(array_filter($allUsers, function ($user) use ($searchValue) {
+                $haystack = implode(' ', [
+                    data_get($user, 'username', ''),
+                    data_get($user, 'name', ''),
+                    data_get($user, 'ar_name', ''),
+                    data_get($user, 'en_name', ''),
+                    data_get($user, 'email', ''),
+                    data_get($user, 'acadimic_rank', ''),
+                ]);
+                return stripos($haystack, $searchValue) !== false;
+            }));
+        }
+
+        $recordsFiltered = count($allUsers);
+
+        // Pagination slice
+        $pageData = array_slice($allUsers, $start, $length);
+
+        // Append existence flag and sanitize UTF-8 strings
+        $data = array_map(function ($user) use ($currentLDAPLookup) {
+            $user['exist'] = isset($currentLDAPLookup[$user['username']]) || in_array($user['email'], $currentLDAPLookup);
+            $user['username'] = $this->normalizeLdapString(data_get($user, 'username', ''));
+            $user['name'] = $this->normalizeLdapString(data_get($user, 'name', ''));
+            $user['ar_name'] = $this->normalizeLdapString(data_get($user, 'ar_name', ''));
+            $user['en_name'] = $this->normalizeLdapString(data_get($user, 'en_name', ''));
+            $user['email'] = $this->normalizeLdapString(data_get($user, 'email', ''));
+            $user['acadimic_rank'] = $this->normalizeLdapString(data_get($user, 'acadimic_rank', ''));
+            return $user;
+        }, $pageData);
+
+        return response()->json([
+            'draw' => $draw,
+            'recordsTotal' => $recordsTotal,
+            'recordsFiltered' => $recordsFiltered,
+            'data' => $data,
+        ]);
+    }
+
     public function testConnection(Request $request)
     {
 
@@ -186,7 +246,7 @@ class LDAPController extends Controller
             }
 
             if ($user) {
-                return [
+                $userData = [
                     'username' => $username,
                     'acadimic_rank_id' => $rankId,
                     'name' => $user['givenname'][0] ?? '',
@@ -194,6 +254,8 @@ class LDAPController extends Controller
                     'en_name' => $user['displayname'][0] ?? '',
                     'email' => $user['mail'][0] ?? '',
                 ];
+
+                return $userData;
             }
 
             return 0;
@@ -217,12 +279,12 @@ class LDAPController extends Controller
 
             foreach ($users as $user) {
                 $fillable[] = [
-                    'username' => $user['samaccountname'][0] ?? '',
-                    'acadimic_rank' => $user['title'][0] ?? '',
-                    'name' => $user['givenname'][0] ?? '',
-                    'ar_name' => $user['cn'][0] ?? '',
-                    'en_name' => $user['displayname'][0] ?? '',
-                    'email' => $user['mail'][0] ?? '',
+                    'username' => $this->normalizeLdapString(data_get($user, 'samaccountname')),
+                    'acadimic_rank' => $this->normalizeLdapString(data_get($user, 'title')),
+                    'name' => $this->normalizeLdapString(data_get($user, 'givenname')),
+                    'ar_name' => $this->normalizeLdapString(data_get($user, 'cn')),
+                    'en_name' => $this->normalizeLdapString(data_get($user, 'displayname')),
+                    'email' => $this->normalizeLdapString(data_get($user, 'mail')),
                 ];
             }
 
@@ -230,6 +292,31 @@ class LDAPController extends Controller
         } catch (\Exception $e) {
             abort(500, 'Failed to connect with LDAP');
         }
+    }
+
+    private function normalizeLdapString($value): string
+    {
+        // Some LDAP libraries return arrays for multivalued attributes
+        if (is_array($value)) {
+            // Prefer first item
+            $value = reset($value);
+        }
+
+        if (!is_string($value)) {
+            $value = '';
+        }
+
+        // Ensure proper UTF-8; strip invalid bytes
+        if (!mb_check_encoding($value, 'UTF-8')) {
+            $converted = @iconv('UTF-8', 'UTF-8//IGNORE', $value);
+            if ($converted !== false) {
+                $value = $converted;
+            } else {
+                $value = utf8_encode($value);
+            }
+        }
+
+        return $value;
     }
 
     public function importUsers(Request $request)
